@@ -19,4 +19,16 @@ try {
      error_log("Database connection failed: " . $e->getMessage()); // Add this for debugging
      throw new \PDOException($e->getMessage(), (int)$e->getCode());
 }
+
+// Add secure session settings
+session_set_cookie_params([
+    'lifetime' => 3600, // 1 hour
+    'path' => '/',
+    'domain' => $_SERVER['HTTP_HOST'],
+    'secure' => true, // Only send over HTTPS
+    'httponly' => true, // Prevent JavaScript access
+    'samesite' => 'Strict'
+]);
+
+session_start();
 ?>

@@ -14,9 +14,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Get user from database
         $stmt = $pdo->prepare('SELECT * FROM users WHERE email = ?');
         $stmt->execute([$email]);
-        $user = $stmt->fetch();
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($user) {
+        if ($user && is_array($user)) {
             // Verify security answers
             if (password_verify($answer1, $user['security_answer1']) && 
                 password_verify($answer2, $user['security_answer2'])) {
@@ -54,12 +54,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <form method="POST">
             <label>Email:</label>
             <input type="email" name="email" required>
-            <label>Security Answer 1:</label>
+            
+            <h3>Security Questions</h3>
+            <label>Question 1:</label>
+            <select name="question1" required>
+                <option value="">Select a question</option>
+                <option value="What was your first pet's name?">What was your first pet's name?</option>
+                <option value="What city were you born in?">What city were you born in?</option>
+                <option value="What is your mother's maiden name?">What is your mother's maiden name?</option>
+            </select>
+            <label>Answer 1:</label>
             <input type="text" name="answer1" required>
-            <label>Security Answer 2:</label>
+            
+            <label>Question 2:</label>
+            <select name="question2" required>
+                <option value="">Select a question</option>
+                <option value="What was your high school mascot?">What was your high school mascot?</option>
+                <option value="What is your favorite book?">What is your favorite book?</option>
+                <option value="What was your first car?">What was your first car?</option>
+            </select>
+            <label>Answer 2:</label>
             <input type="text" name="answer2" required>
+            
             <button type="submit">Authenticate</button>
         </form>
+        <!-- Back Button -->
+        <button onclick="window.history.back()">Back</button>
     </div>
 </body>
 </html>

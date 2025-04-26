@@ -4,10 +4,23 @@ require 'vendor/autoload.php';
 use Kreait\Firebase\Factory;
 
 session_start();
+
+// Check if user session exists
 if (!isset($_SESSION['user'])) {
     header('Location: index.php');
     exit();
 }
+
+// Check session timeout (30 minutes)
+if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity'] > 1800)) {
+    session_unset();
+    session_destroy();
+    header('Location: index.php');
+    exit();
+}
+
+// Update last activity time
+$_SESSION['last_activity'] = time();
 
 $factory = (new Factory)->withServiceAccount('firebase_ias.json');
 $auth = $factory->createAuth();
@@ -15,7 +28,15 @@ $auth = $factory->createAuth();
 // Get user data from MySQL
 $stmt = $pdo->prepare('SELECT * FROM users WHERE email = ?');
 $stmt->execute([$_SESSION['user']]);
-$userData = $stmt->fetch();
+$userData = $stmt->fetch(PDO::FETCH_ASSOC);
+
+// Verify user exists and is authenticated
+if (!$userData || !isset($userData['email']) || !isset($userData['firebase_uid'])) {
+    // Clear invalid session and redirect
+    unset($_SESSION['user']);
+    header('Location: index.php');
+    exit();
+}
 ?>
 <!DOCTYPE html>
 <html>

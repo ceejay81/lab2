@@ -43,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([$email, $user->uid, $hashedPassword, $question1, $hashedAnswer1, $question2, $hashedAnswer2, $verificationToken]);
             
             // Send email verification with callback URL
-            $verificationUrl = "http://localhost/ias2/lab2web/verify.php?token=$verificationToken";
+            $verificationUrl = "http://localhost/lab2_web/lab2/verify.php?token=$verificationToken";
             $auth->sendEmailVerificationLink($email, [
                 'continueUrl' => $verificationUrl
             ]);

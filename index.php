@@ -50,7 +50,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $stmt = $pdo->prepare('UPDATE users SET failed_attempts = 0 WHERE email = ?');
                     $stmt->execute([$email]);
                     
+                    // Set secure session
                     $_SESSION['user'] = $email;
+                    $_SESSION['last_activity'] = time();
+                    
+                    // Set refresh token
+                    $refreshToken = bin2hex(random_bytes(32));
+                    $stmt = $pdo->prepare('UPDATE users SET refresh_token = ? WHERE email = ?');
+                    $stmt->execute([$refreshToken, $email]);
+                    
+                    // Set secure cookie
+                    setcookie('refresh_token', $refreshToken, [
+                        'expires' => time() + 86400 * 30, // 30 days
+                        'path' => '/',
+                        'domain' => $_SERVER['HTTP_HOST'],
+                        'secure' => true,
+                        'httponly' => true,
+                        'samesite' => 'Strict'
+                    ]);
+                    
                     header('Location: dashboard.php');
                     exit();
                 } else {
