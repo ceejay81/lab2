@@ -25,29 +25,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = $_POST['email'];
     $password = $_POST['password'];
     
-    // Validate email format
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error = "Please enter a valid email address";
-    } else {
-        try {
-            // Verify Firebase service account
-            $factory = (new Factory)->withServiceAccount('firebase_ias.json');
-            $auth = $factory->createAuth();
-            
-            // Authenticate with Firebase
-            $signInResult = $auth->signInWithEmailAndPassword($email, $password);
-            
-            // Verify user exists in MySQL
-            $stmt = $pdo->prepare('SELECT * FROM users WHERE email = ? AND firebase_uid = ?');
-            $stmt->execute([$email, $signInResult->data()['localId']]);
-            $user = $stmt->fetch();
-            
-            if ($user) {
-                if (!$user['verified']) {
-                    $error = "Account not verified. Please check your email for verification instructions.";
-                } else if (password_verify($password, $user['password'])) {
-                    // Reset failed attempts on successful login
-                    $stmt = $pdo->prepare('UPDATE users SET failed_attempts = 0 WHERE email = ?');
+    // Check if the account is locked
+    $stmt = $pdo->prepare('SELECT * FROM users WHERE email = ?');
+    $stmt->execute([$email]);
+    $user = $stmt->fetch();
+    
+    if ($user) {
+        // Check if account is locked
+        if ($user['lockout_until'] !== null && strtotime($user['lockout_until']) > time()) {
+            $waitTime = ceil((strtotime($user['lockout_until']) - time()) / 60);
+            $error = "Account is locked. Please try again after {$waitTime} minutes.";
+        } else {
+            try {
+                // Reset lockout if it's expired
+                if ($user['lockout_until'] !== null && strtotime($user['lockout_until']) <= time()) {
+                    $stmt = $pdo->prepare('UPDATE users SET login_attempts = 0, lockout_until = NULL WHERE email = ?');
+                    $stmt->execute([$email]);
+                }
+                
+                // Verify Firebase service account
+                $factory = (new Factory)->withServiceAccount('firebase_ias.json');
+                $auth = $factory->createAuth();
+                
+                // Authenticate with Firebase
+                $signInResult = $auth->signInWithEmailAndPassword($email, $password);
+                
+                if (password_verify($password, $user['password'])) {
+                    // Reset login attempts on successful login
+                    $stmt = $pdo->prepare('UPDATE users SET login_attempts = 0, last_attempt_time = NULL, lockout_until = NULL WHERE email = ?');
                     $stmt->execute([$email]);
                     
                     // Set secure session
@@ -72,38 +77,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     header('Location: dashboard.php');
                     exit();
                 } else {
-                    // Increment failed attempts
-                    $stmt = $pdo->prepare('UPDATE users SET failed_attempts = failed_attempts + 1 WHERE email = ?');
-                    $stmt->execute([$email]);
+                    // Increment login attempts
+                    $newAttempts = $user['login_attempts'] + 1;
+                    $lockoutUntil = null;
                     
-                    if ($user['failed_attempts'] >= 2) {
-                        header('Location: backup_auth.php');
-                        exit();
+                    // Implement progressive lockout
+                    if ($newAttempts >= 5) {
+                        // Lock for 30 minutes after 5 attempts
+                        $lockoutUntil = date('Y-m-d H:i:s', strtotime('+30 minutes'));
+                    } else if ($newAttempts >= 3) {
+                        // Lock for 15 minutes after 3 attempts
+                        $lockoutUntil = date('Y-m-d H:i:s', strtotime('+15 minutes'));
                     }
-                    $error = "Wrong password. Please try again.";
+                    
+                    $stmt = $pdo->prepare('UPDATE users SET login_attempts = ?, last_attempt_time = NOW(), lockout_until = ? WHERE email = ?');
+                    $stmt->execute([$newAttempts, $lockoutUntil, $email]);
+                    
+                    if ($lockoutUntil) {
+                        $waitTime = ($newAttempts >= 5) ? '30' : '15';
+                        $error = "Account locked for {$waitTime} minutes due to multiple failed attempts.";
+                    } else {
+                        $remainingAttempts = 3 - $newAttempts;
+                        $error = "Invalid credentials. {$remainingAttempts} attempts remaining before lockout.";
+                    }
                 }
-            } else {
-                $error = "User not found. Please register first.";
-            }
-        } catch (Exception $e) {
-            error_log("Login error: " . $e->getMessage());
-            if (strpos($e->getMessage(), 'INVALID_LOGIN_CREDENTIALS') !== false) {
-                // Check if the account exists in the database
-                $stmt = $pdo->prepare('SELECT * FROM users WHERE email = ?');
-                $stmt->execute([$email]);
-                $user = $stmt->fetch();
-                
-                if (!$user) {
-                    $error = "Account not found. Please register first.";
+            } catch (Exception $e) {
+                error_log("Login error: " . $e->getMessage());
+                if (strpos($e->getMessage(), 'INVALID_LOGIN_CREDENTIALS') !== false) {
+                    // Check if the account exists in the database
+                    $stmt = $pdo->prepare('SELECT * FROM users WHERE email = ?');
+                    $stmt->execute([$email]);
+                    $user = $stmt->fetch();
+                    
+                    if (!$user) {
+                        $error = "Account not found. Please register first.";
+                    } else {
+                        $error = "Invalid email or password. Please check your credentials.";
+                    }
+                } elseif (strpos($e->getMessage(), 'TOO_MANY_ATTEMPTS_TRY_LATER') !== false) {
+                    $error = "Too many failed attempts. Please try again later.";
                 } else {
-                    $error = "Invalid email or password. Please check your credentials.";
+                    $error = "Login failed. Please try again.";
                 }
-            } elseif (strpos($e->getMessage(), 'TOO_MANY_ATTEMPTS_TRY_LATER') !== false) {
-                $error = "Too many failed attempts. Please try again later.";
-            } else {
-                $error = "Login failed. Please try again.";
             }
         }
+    } else {
+        // Generic error message to prevent user enumeration
+        $error = "Invalid email or password.";
     }
 }
 ?>

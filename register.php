@@ -36,8 +36,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             // Store user data in MySQL with verification token
             $hashedPassword = password_hash($password, PASSWORD_BCRYPT);
-            $hashedAnswer1 = password_hash($answer1, PASSWORD_BCRYPT);
-            $hashedAnswer2 = password_hash($answer2, PASSWORD_BCRYPT);
+            // Hash answers instead of encrypting them
+            $hashedAnswer1 = password_hash(strtolower(trim($answer1)), PASSWORD_BCRYPT);
+            $hashedAnswer2 = password_hash(strtolower(trim($answer2)), PASSWORD_BCRYPT);
             
             $stmt = $pdo->prepare('INSERT INTO users (email, firebase_uid, password, security_question1, security_answer1, security_question2, security_answer2, verification_token, verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)');
             $stmt->execute([$email, $user->uid, $hashedPassword, $question1, $hashedAnswer1, $question2, $hashedAnswer2, $verificationToken]);

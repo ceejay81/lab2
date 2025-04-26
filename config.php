@@ -1,0 +1,1 @@
+<?php return ["encryption_key" => "z2oFQuQKGimF5U6BBCSaaCkHdEvJF/F6MyUWZTSaUC4="];

@@ -17,10 +17,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($user && is_array($user)) {
-            // Verify security answers
-            if (password_verify($answer1, $user['security_answer1']) && 
-                password_verify($answer2, $user['security_answer2'])) {
-                
+            // Compare hashed answers instead of encrypted ones
+            if (password_verify(strtolower(trim($answer1)), $user['security_answer1']) && 
+                password_verify(strtolower(trim($answer2)), $user['security_answer2'])) {
                 // Reset failed attempts
                 $stmt = $pdo->prepare('UPDATE users SET failed_attempts = 0 WHERE email = ?');
                 $stmt->execute([$email]);
@@ -79,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <button type="submit">Authenticate</button>
         </form>
         <!-- Back Button -->
-        <button onclick="window.history.back()">Back</button>
+        <a href="index.php" class="back-button">Back</a>
     </div>
 </body>
 </html>
