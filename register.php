@@ -5,12 +5,45 @@ use Kreait\Firebase\Factory;
 use Kreait\Firebase\Exception\AuthException;
 
 session_start();
+
+// Security Headers
+header("Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'");
+header("X-Frame-Options: DENY");
+header("X-Content-Type-Options: nosniff");
+header("X-XSS-Protection: 1; mode=block");
+header("Referrer-Policy: strict-origin-when-cross-origin");
+
 if (isset($_SESSION['user'])) {
     header('Location: dashboard.php');
     exit();
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Initialize registration attempts if not set
+    if (!isset($_SESSION['registration_attempts'])) {
+        $_SESSION['registration_attempts'] = 0;
+        $_SESSION['first_attempt_time'] = time();
+    }
+    
+    // Reset attempts after 1 hour
+    if (time() - $_SESSION['first_attempt_time'] > 3600) {
+        $_SESSION['registration_attempts'] = 0;
+        $_SESSION['first_attempt_time'] = time();
+    }
+    
+    // Check if too many attempts
+    if ($_SESSION['registration_attempts'] >= 5) {
+        $error = "Too many registration attempts. Please try again in an hour.";
+        exit();
+    }
+    
+    $_SESSION['registration_attempts']++;
+    if (!isset($_POST['csrf_token']) || !isset($_SESSION['csrf_token']) || 
+        $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        $error = "Invalid request";
+        exit();
+    }
+    unset($_SESSION['csrf_token']);
     $email = $_POST['email'];
     $password = $_POST['password'];
     $question1 = $_POST['question1'];
@@ -23,6 +56,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = "Please enter a valid email address";
     } else if (empty($question1) || empty($answer1) || empty($question2) || empty($answer2)) {
         $error = "Please complete all security questions";
+    } else if (!preg_match('/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/', $password)) {
+        $error = "Password must be at least 8 characters and include uppercase, lowercase, numbers and special characters";
     } else {
         $factory = (new Factory)->withServiceAccount('firebase_ias.json');
         $auth = $factory->createAuth();
@@ -44,7 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([$email, $user->uid, $hashedPassword, $question1, $hashedAnswer1, $question2, $hashedAnswer2, $verificationToken]);
             
             // Send email verification with callback URL
-            $verificationUrl = "http://localhost/lab2_web/lab2/verify.php?token=$verificationToken";
+            $verificationUrl = "https://" . $_SERVER['HTTP_HOST'] . "/lab2_web/lab2/verify.php?token=$verificationToken";
             $auth->sendEmailVerificationLink($email, [
                 'continueUrl' => $verificationUrl
             ]);
@@ -53,7 +88,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Location: verify.php');
             exit();
         } catch (AuthException $e) {
-            $error = "Registration failed: " . $e->getMessage();
+            error_log("Registration failed for email {$email}: " . $e->getMessage());
+            $error = "Registration failed. Please try again later.";
         }
     }
 }
@@ -71,10 +107,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <p class="error"><?= $error ?></p>
         <?php endif; ?>
         <form method="POST">
+            <?php 
+            $csrf_token = bin2hex(random_bytes(32));
+            $_SESSION['csrf_token'] = $csrf_token;
+            ?>
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
             <label>Email:</label>
-            <input type="email" name="email" required>
+            <input type="email" name="email" required pattern="[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$">
             <label>Password:</label>
-            <input type="password" name="password" required minlength="6">
+            <input type="password" name="password" required minlength="8" 
+                   pattern="^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$"
+                   title="Must contain at least 8 characters, including uppercase, lowercase, numbers and special characters">
             
             <h3>Security Questions</h3>
             <label>Question 1:</label>
